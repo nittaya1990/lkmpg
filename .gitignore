@@ -1,5 +1,6 @@
 # Linux kernel build system
 *.o
+*.o.d
 *.ko
 *cmd
 *.dwo
@@ -18,6 +19,8 @@ lkmpg.pdf
 *.toc
 *.bbl
 *.blg
+*.fdb_latexmk 
+*.fls
 
 # make4ht
 *.html

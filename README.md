@@ -1,11 +1,11 @@
 # The Linux Kernel Module Programming Guide
 
-This project keeps the Linux Kernel Module Programming Guide up to date, with [working examples](examples/) for recent 5.x kernel versions.
+This project keeps the Linux Kernel Module Programming Guide up to date, with [working examples](examples/) for recent 5.x and 6.x kernel versions.
 The guide has been around since 2001 and most copies of it on the web only describe old 2.6.x kernels.
 
 The book can be freely accessed via https://sysprog21.github.io/lkmpg/ or [latest PDF file](https://github.com/sysprog21/lkmpg/releases).
 The original guide may be found at [Linux Documentation Project](http://www.tldp.org/LDP/lkmpg/).
-You may check other [freely available programming books](https://ebookfoundation.github.io/free-programming-books/books/free-programming-books.html) listed by The [Free Ebook Foundation](https://ebookfoundation.org/) or [Linux online books](https://onlinebooks.library.upenn.edu/webbin/book/browse?type=lcsubc&key=Linux) collected by [The Online Books Page](https://onlinebooks.library.upenn.edu/).
+You may check other [freely available programming books](https://ebookfoundation.github.io/free-programming-books-search/) listed by The [Free Ebook Foundation](https://ebookfoundation.org/) or [Linux online books](https://onlinebooks.library.upenn.edu/webbin/book/browse?type=lcsubc&key=Linux) collected by [The Online Books Page](https://onlinebooks.library.upenn.edu/).
 
 ## Getting Started
 
@@ -24,7 +24,7 @@ $ git clone https://github.com/sysprog21/lkmpg.git && cd lkmpg
 
 ### Step 2: Install the prerequisites
 
-To gernate the book from source, [TeXLive](https://www.tug.org/texlive/) ([MacTeX](https://www.tug.org/mactex/)) is required.
+To generate the book from source, [TeXLive](https://www.tug.org/texlive/) ([MacTeX](https://www.tug.org/mactex/)) is required.
 
 For Ubuntu Linux, macOS, and other Unix-like systems, run the following command(s):
 
@@ -33,14 +33,18 @@ For Ubuntu Linux, macOS, and other Unix-like systems, run the following command(
 $ sudo apt install make texlive-full
 
 # Arch / Manjaro
-$ sudo pacman -S make texlive-most texlive-bin
+$ sudo pacman -S make texlive-binextra texlive-bin
 
 # macOS
-$ brew install --cask mactex
+$ brew install mactex
 $ sudo tlmgr update --self
 ```
 
-Alternatively, using [Docker](https://docs.docker.com/) is recommended, as it guarantees the same dependencies with our GitHub Actions wokrflow.
+Note that `latexmk` is required to generated PDF, and it probably has been installed on your OS already. If not, please follow the [installation guide](https://mg.readthedocs.io/latexmk.html#installation).
+
+In macOS systems, package `Pygments` may not be pre-installed. If not, please refer to the [installation guide](https://pygments.org/download/) before generate documents.
+
+Alternatively, using [Docker](https://docs.docker.com/) is recommended, as it guarantees the same dependencies with our GitHub Actions workflow.
 After install [docker engine](https://docs.docker.com/engine/install/) on your machine, pull the docker image [twtug/lkmpg](https://hub.docker.com/r/twtug/lkmpg) and run in isolated containers.
 
 ```shell

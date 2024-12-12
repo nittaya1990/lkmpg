@@ -1,13 +1,10 @@
 /*
- * syscall.c
+ * syscall-steal.c
  *
  * System call "stealing" sample.
  *
  * Disables page protection at a processor level by changing the 16th bit
  * in the cr0 register (could be Intel specific).
- *
- * Based on example by Peter Jay Salzman and
- * https://bbs.archlinux.org/viewtopic.php?id=139406
  */
 
 #include <linux/delay.h>
@@ -15,6 +12,8 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h> /* which will have params */
 #include <linux/unistd.h> /* The list of system calls */
+#include <linux/cred.h> /* For current_uid() */
+#include <linux/uidgid.h> /* For __kuid_val() */
 #include <linux/version.h>
 
 /* For the current (process) structure, we need this to know who the
@@ -24,9 +23,9 @@
 #include <linux/uaccess.h>
 
 /* The way we access "sys_call_table" varies as kernel internal changes.
- * - ver <= 5.4 : manual symbol lookup
- * - 5.4 < ver < 5.7 : kallsyms_lookup_name
- * - 5.7 <= ver : Kprobes or specific kernel module parameter
+ * - Prior to v5.4 : manual symbol lookup
+ * - v5.5 to v5.6  : use kallsyms_lookup_name()
+ * - v5.7+         : Kprobes or specific kernel module parameter
  */
 
 /* The in-kernel calls to the ksys_close() syscall were removed in Linux v5.11+.
@@ -44,6 +43,14 @@
 
 #if defined(CONFIG_KPROBES)
 #define HAVE_KPROBES 1
+#if defined(CONFIG_X86_64)
+/* If you have tried to use the syscall table to intercept syscalls and it 
+ * doesn't work, you can try to use Kprobes to intercept syscalls.
+ * Set USE_KPROBES_PRE_HANDLER_BEFORE_SYSCALL to 1 to register a pre-handler
+ * before the syscall.
+ */
+#define USE_KPROBES_PRE_HANDLER_BEFORE_SYSCALL 0
+#endif
 #include <linux/kprobes.h>
 #else
 #define HAVE_PARAM 1
@@ -59,25 +66,55 @@ module_param(sym, ulong, 0644);
 
 #endif /* Version < v5.7 */
 
-static unsigned long **sys_call_table;
-
 /* UID we want to spy on - will be filled from the command line. */
-static int uid;
+static uid_t uid = -1;
 module_param(uid, int, 0644);
 
+#if USE_KPROBES_PRE_HANDLER_BEFORE_SYSCALL
+
+/* syscall_sym is the symbol name of the syscall to spy on. The default is
+ * "__x64_sys_openat", which can be changed by the module parameter. You can 
+ * look up the symbol name of a syscall in /proc/kallsyms.
+ */
+static char *syscall_sym = "__x64_sys_openat";
+module_param(syscall_sym, charp, 0644);
+
+static int sys_call_kprobe_pre_handler(struct kprobe *p, struct pt_regs *regs)
+{
+    if (__kuid_val(current_uid()) != uid) {
+        return 0;
+    }
+
+    pr_info("%s called by %d\n", syscall_sym, uid);
+    return 0;
+}
+
+static struct kprobe syscall_kprobe = {
+    .symbol_name = "__x64_sys_openat",
+    .pre_handler = sys_call_kprobe_pre_handler,
+};
+
+#else
+
+static unsigned long **sys_call_table_stolen;
+
 /* A pointer to the original system call. The reason we keep this, rather
- * than call the original function (sys_open), is because somebody else
+ * than call the original function (sys_openat), is because somebody else
  * might have replaced the system call before us. Note that this is not
- * 100% safe, because if another module replaced sys_open before us,
+ * 100% safe, because if another module replaced sys_openat before us,
  * then when we are inserted, we will call the function in that module -
  * and it might be removed before we are.
  *
- * Another reason for this is that we can not get sys_open.
+ * Another reason for this is that we can not get sys_openat.
  * It is a static variable, so it is not exported.
  */
-static asmlinkage int (*original_call)(const char *, int, int);
+#ifdef CONFIG_ARCH_HAS_SYSCALL_WRAPPER
+static asmlinkage long (*original_call)(const struct pt_regs *);
+#else
+static asmlinkage long (*original_call)(int, const char __user *, int, umode_t);
+#endif
 
-/* The function we will replace sys_open (the function called when you
+/* The function we will replace sys_openat (the function called when you
  * call the open system call) with. To find the exact prototype, with
  * the number and type of arguments, we find the original function first
  * (it is at fs/open.c).
@@ -87,27 +124,44 @@ static asmlinkage int (*original_call)(const char *, int, int);
  * wreck havoc and require programs to be recompiled, since the system
  * calls are the interface between the kernel and the processes).
  */
-static asmlinkage int our_sys_open(const char *filename, int flags, int mode)
+#ifdef CONFIG_ARCH_HAS_SYSCALL_WRAPPER
+static asmlinkage long our_sys_openat(const struct pt_regs *regs)
+#else
+static asmlinkage long our_sys_openat(int dfd, const char __user *filename,
+                                      int flags, umode_t mode)
+#endif
 {
     int i = 0;
     char ch;
 
+    if (__kuid_val(current_uid()) != uid)
+        goto orig_call;
+
     /* Report the file, if relevant */
     pr_info("Opened file by %d: ", uid);
     do {
+#ifdef CONFIG_ARCH_HAS_SYSCALL_WRAPPER
+        get_user(ch, (char __user *)regs->si + i);
+#else
         get_user(ch, (char __user *)filename + i);
+#endif
         i++;
         pr_info("%c", ch);
     } while (ch != 0);
     pr_info("\n");
 
-    /* Call the original sys_open - otherwise, we lose the ability to
+orig_call:
+    /* Call the original sys_openat - otherwise, we lose the ability to
      * open files.
      */
-    return original_call(filename, flags, mode);
+#ifdef CONFIG_ARCH_HAS_SYSCALL_WRAPPER
+    return original_call(regs);
+#else
+    return original_call(dfd, filename, flags, mode);
+#endif
 }
 
-static unsigned long **aquire_sys_call_table(void)
+static unsigned long **acquire_sys_call_table(void)
 {
 #ifdef HAVE_KSYS_CLOSE
     unsigned long int offset = PAGE_OFFSET;
@@ -182,34 +236,49 @@ static void disable_write_protection(void)
     clear_bit(16, &cr0);
     __write_cr0(cr0);
 }
+#endif
 
-static int __init syscall_start(void)
+static int __init syscall_steal_start(void)
 {
-    if (!(sys_call_table = aquire_sys_call_table()))
+#if USE_KPROBES_PRE_HANDLER_BEFORE_SYSCALL
+    int err;
+    /* use symbol name from the module parameter */
+    syscall_kprobe.symbol_name = syscall_sym;
+    err = register_kprobe(&syscall_kprobe);
+    if (err) {
+        pr_err("register_kprobe() on %s failed: %d\n", syscall_sym, err);
+        pr_err("Please check the symbol name from 'syscall_sym' parameter.\n");
+        return err;
+    }
+#else
+    if (!(sys_call_table_stolen = acquire_sys_call_table()))
         return -1;
 
     disable_write_protection();
 
     /* keep track of the original open function */
-    original_call = (void *)sys_call_table[__NR_open];
+    original_call = (void *)sys_call_table_stolen[__NR_openat];
 
-    /* use our open function instead */
-    sys_call_table[__NR_open] = (unsigned long *)our_sys_open;
+    /* use our openat function instead */
+    sys_call_table_stolen[__NR_openat] = (unsigned long *)our_sys_openat;
 
     enable_write_protection();
+#endif
 
     pr_info("Spying on UID:%d\n", uid);
-
     return 0;
 }
 
-static void __exit syscall_end(void)
+static void __exit syscall_steal_end(void)
 {
-    if (!sys_call_table)
+#if USE_KPROBES_PRE_HANDLER_BEFORE_SYSCALL
+    unregister_kprobe(&syscall_kprobe);
+#else
+    if (!sys_call_table_stolen)
         return;
 
     /* Return the system call back to normal */
-    if (sys_call_table[__NR_open] != (unsigned long *)our_sys_open) {
+    if (sys_call_table_stolen[__NR_openat] != (unsigned long *)our_sys_openat) {
         pr_alert("Somebody else also played with the ");
         pr_alert("open system call\n");
         pr_alert("The system may be left in ");
@@ -217,13 +286,14 @@ static void __exit syscall_end(void)
     }
 
     disable_write_protection();
-    sys_call_table[__NR_open] = (unsigned long *)original_call;
+    sys_call_table_stolen[__NR_openat] = (unsigned long *)original_call;
     enable_write_protection();
+#endif
 
     msleep(2000);
 }
 
-module_init(syscall_start);
-module_exit(syscall_end);
+module_init(syscall_steal_start);
+module_exit(syscall_steal_end);
 
 MODULE_LICENSE("GPL");

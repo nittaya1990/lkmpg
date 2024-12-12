@@ -2,15 +2,19 @@
  * chardev2.c - Create an input/output character device
  */
 
+#include <linux/atomic.h>
 #include <linux/cdev.h>
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/init.h>
-#include <linux/irq.h>
-#include <linux/kernel.h> /* We are doing kernel work */
 #include <linux/module.h> /* Specifically, a module */
-#include <linux/poll.h>
+#include <linux/printk.h>
+#include <linux/types.h>
+#include <linux/uaccess.h> /* for get_user and put_user */
+#include <linux/version.h>
+
+#include <asm/errno.h>
 
 #include "chardev.h"
 #define SUCCESS 0
@@ -18,8 +22,8 @@
 #define BUF_LEN 80
 
 enum {
-    CDEV_NOT_USED = 0,
-    CDEV_EXCLUSIVE_OPEN = 1,
+    CDEV_NOT_USED,
+    CDEV_EXCLUSIVE_OPEN,
 };
 
 /* Is the device open right now? Used to prevent concurrent access into
@@ -28,7 +32,7 @@ enum {
 static atomic_t already_open = ATOMIC_INIT(CDEV_NOT_USED);
 
 /* The message the device will give when asked */
-static char message[BUF_LEN];
+static char message[BUF_LEN + 1];
 
 static struct class *cls;
 
@@ -37,10 +41,6 @@ static int device_open(struct inode *inode, struct file *file)
 {
     pr_info("device_open(%p)\n", file);
 
-    /* We don't want to talk to two processes at the same time. */
-    if (atomic_cmpxchg(&already_open, CDEV_NOT_USED, CDEV_EXCLUSIVE_OPEN))
-        return -EBUSY;
-
     try_module_get(THIS_MODULE);
     return SUCCESS;
 }
@@ -48,9 +48,6 @@ static int device_open(struct inode *inode, struct file *file)
 static int device_release(struct inode *inode, struct file *file)
 {
     pr_info("device_release(%p,%p)\n", inode, file);
-
-    /* We're now ready for our next caller */
-    atomic_set(&already_open, CDEV_NOT_USED);
 
     module_put(THIS_MODULE);
     return SUCCESS;
@@ -129,6 +126,11 @@ device_ioctl(struct file *file, /* ditto */
              unsigned long ioctl_param)
 {
     int i;
+    long ret = SUCCESS;
+
+    /* We don't want to talk to two processes at the same time. */
+    if (atomic_cmpxchg(&already_open, CDEV_NOT_USED, CDEV_EXCLUSIVE_OPEN))
+        return -EBUSY;
 
     /* Switch according to the ioctl called */
     switch (ioctl_num) {
@@ -166,11 +168,14 @@ device_ioctl(struct file *file, /* ditto */
         /* This ioctl is both input (ioctl_param) and output (the return
          * value of this function).
          */
-        return (long)message[ioctl_param];
+        ret = (long)message[ioctl_param];
         break;
     }
 
-    return SUCCESS;
+    /* We're now ready for our next caller */
+    atomic_set(&already_open, CDEV_NOT_USED);
+
+    return ret;
 }
 
 /* Module Declarations */
@@ -191,7 +196,7 @@ static struct file_operations fops = {
 /* Initialize the module - Register the character device */
 static int __init chardev2_init(void)
 {
-    /* Register the character device (atleast try) */
+    /* Register the character device (at least try) */
     int ret_val = register_chrdev(MAJOR_NUM, DEVICE_NAME, &fops);
 
     /* Negative values signify an error */
@@ -201,7 +206,11 @@ static int __init chardev2_init(void)
         return ret_val;
     }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+    cls = class_create(DEVICE_FILE_NAME);
+#else
     cls = class_create(THIS_MODULE, DEVICE_FILE_NAME);
+#endif
     device_create(cls, NULL, MKDEV(MAJOR_NUM, 0), NULL, DEVICE_FILE_NAME);
 
     pr_info("Device created on /dev/%s\n", DEVICE_FILE_NAME);

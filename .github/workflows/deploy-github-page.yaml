@@ -1,4 +1,4 @@
-name: build-deploy-github-page
+name: deploy-github-page
 
 on:
   push:
@@ -12,12 +12,12 @@ jobs:
     container: twtug/lkmpg
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Build
         run: |
           make html
       - name: Deploy to gh-pages branch
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./html

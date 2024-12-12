@@ -55,13 +55,13 @@ static int __init kbleds_init(void)
     for (i = 0; i < MAX_NR_CONSOLES; i++) {
         if (!vc_cons[i].d)
             break;
-        pr_info("poet_atkm: console[%i/%i] #%i, tty %lx\n", i, MAX_NR_CONSOLES,
-                vc_cons[i].d->vc_num, (unsigned long)vc_cons[i].d->port.tty);
+        pr_info("poet_atkm: console[%i/%i] #%i, tty %p\n", i, MAX_NR_CONSOLES,
+                vc_cons[i].d->vc_num, (void *)vc_cons[i].d->port.tty);
     }
     pr_info("kbleds: finished scanning consoles\n");
 
     my_driver = vc_cons[fg_console].d->port.tty->driver;
-    pr_info("kbleds: tty driver magic %x\n", my_driver->magic);
+    pr_info("kbleds: tty driver name %s\n", my_driver->driver_name);
 
     /* Set up the LED blink timer the first time. */
     timer_setup(&my_timer, my_timer_func, 0);

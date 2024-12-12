@@ -1,9 +1,9 @@
 /*
  * example_rwlock.c
  */
-#include <linux/interrupt.h>
-#include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/printk.h>
+#include <linux/rwlock.h>
 
 static DEFINE_RWLOCK(myrwlock);
 
@@ -33,7 +33,7 @@ static void example_write_lock(void)
     pr_info("Write Unlocked\n");
 }
 
-static int example_rwlock_init(void)
+static int __init example_rwlock_init(void)
 {
     pr_info("example_rwlock started\n");
 
@@ -43,7 +43,7 @@ static int example_rwlock_init(void)
     return 0;
 }
 
-static void example_rwlock_exit(void)
+static void __exit example_rwlock_exit(void)
 {
     pr_info("example_rwlock exit\n");
 }

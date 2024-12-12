@@ -1,14 +1,13 @@
 /*
  * example_mutex.c
  */
-#include <linux/init.h>
-#include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/printk.h>
 
 static DEFINE_MUTEX(mymutex);
 
-static int example_mutex_init(void)
+static int __init example_mutex_init(void)
 {
     int ret;
 
@@ -29,7 +28,7 @@ static int example_mutex_init(void)
     return 0;
 }
 
-static void example_mutex_exit(void)
+static void __exit example_mutex_exit(void)
 {
     pr_info("example_mutex exit\n");
 }

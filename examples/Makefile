@@ -16,10 +16,8 @@ obj-m += print_string.o
 obj-m += kbleds.o
 obj-m += sched.o
 obj-m += chardev2.o
-obj-m += syscall.o
+obj-m += syscall-steal.o
 obj-m += intrpt.o
-obj-m += cryptosha256.o
-obj-m += cryptosk.o
 obj-m += completions.o
 obj-m += example_tasklet.o
 obj-m += devicemodel.o
@@ -28,17 +26,26 @@ obj-m += example_rwlock.o
 obj-m += example_atomic.o
 obj-m += example_mutex.o
 obj-m += bottomhalf.o
+obj-m += bh_threaded.o
 obj-m += ioctl.o
+obj-m += vinput.o
+obj-m += vkbd.o
+obj-m += static_key.o
 
 PWD := $(CURDIR)
 
+ifeq ($(CONFIG_STATUS_CHECK_GCC),y)
+CC=$(STATUS_CHECK_GCC)
+ccflags-y += -fanalyzer
+endif
+
 all:
-	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	$(MAKE) -C /lib/modules/$(shell uname -r)/build CC=$(CC) M=$(PWD) modules
 
 clean:
-	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	$(MAKE) -C /lib/modules/$(shell uname -r)/build CC=$(CC) M=$(PWD) clean
 	$(RM) other/cat_noblock *.plist
 
 indent:
-	clang-format -i *[.ch]
-	clang-format -i other/*[.ch]
+	clang-format -i *.[ch]
+	clang-format -i other/*.[ch]

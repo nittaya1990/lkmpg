@@ -8,12 +8,13 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
 
 struct ioctl_arg {
     unsigned int val;
 };
 
-/* Documentation/ioctl/ioctl-number.txt */
+/* Documentation/userspace-api/ioctl/ioctl-number.rst */
 #define IOC_MAGIC '\x66'
 
 #define IOCTL_VALSET _IOW(IOC_MAGIC, 0, struct ioctl_arg)
@@ -139,18 +140,20 @@ static int test_ioctl_open(struct inode *inode, struct file *filp)
 }
 
 static struct file_operations fops = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
     .owner = THIS_MODULE,
+#endif
     .open = test_ioctl_open,
     .release = test_ioctl_close,
     .read = test_ioctl_read,
     .unlocked_ioctl = test_ioctl_ioctl,
 };
 
-static int ioctl_init(void)
+static int __init ioctl_init(void)
 {
     dev_t dev;
-    int alloc_ret = 0;
-    int cdev_ret = 0;
+    int alloc_ret = -1;
+    int cdev_ret = -1;
     alloc_ret = alloc_chrdev_region(&dev, 0, num_of_dev, DRIVER_NAME);
 
     if (alloc_ret)
@@ -174,7 +177,7 @@ error:
     return -1;
 }
 
-static void ioctl_exit(void)
+static void __exit ioctl_exit(void)
 {
     dev_t dev = MKDEV(test_ioctl_major, 0);
 

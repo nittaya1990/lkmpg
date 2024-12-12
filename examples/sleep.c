@@ -3,13 +3,20 @@
  * at the same time, put all but one to sleep.
  */
 
-#include <linux/kernel.h> /* We're doing kernel work */
+#include <linux/atomic.h>
+#include <linux/fs.h>
+#include <linux/kernel.h> /* for sprintf() */
 #include <linux/module.h> /* Specifically, a module */
+#include <linux/printk.h>
 #include <linux/proc_fs.h> /* Necessary because we use proc fs */
-#include <linux/sched.h> /* For putting processes to sleep and
-                                   waking them up */
+#include <linux/types.h>
 #include <linux/uaccess.h> /* for get_user and put_user */
 #include <linux/version.h>
+#include <linux/wait.h> /* For putting processes to sleep and
+                                   waking them up */
+
+#include <asm/current.h>
+#include <asm/errno.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 #define HAVE_PROC_OPS
@@ -64,7 +71,7 @@ static ssize_t module_input(struct file *file, /* The file itself */
 {
     int i;
 
-    /* Put the input into Message, where module_output will later be able
+    /* Put the input into message, where module_output will later be able
      * to use it.
      */
     for (i = 0; i < MESSAGE_LENGTH - 1 && i < length; i++)
@@ -85,12 +92,18 @@ static DECLARE_WAIT_QUEUE_HEAD(waitq);
 /* Called when the /proc file is opened */
 static int module_open(struct inode *inode, struct file *file)
 {
+    /* Try to get without blocking  */
+    if (!atomic_cmpxchg(&already_open, 0, 1)) {
+        /* Success without blocking, allow the access */
+        try_module_get(THIS_MODULE);
+        return 0;
+    }
     /* If the file's flags include O_NONBLOCK, it means the process does not
-     * want to wait for the file. In this case, if the file is already open,
+     * want to wait for the file. In this case, because the file is already open,
      * we should fail with -EAGAIN, meaning "you will have to try again",
      * instead of blocking a process which would rather stay awake.
      */
-    if ((file->f_flags & O_NONBLOCK) && atomic_read(&already_open))
+    if (file->f_flags & O_NONBLOCK)
         return -EAGAIN;
 
     /* This is the correct place for try_module_get(THIS_MODULE) because if
@@ -169,6 +182,7 @@ static const struct proc_ops file_ops_4_our_proc_file = {
     .proc_write = module_input, /* "write" to the file */
     .proc_open = module_open, /* called when the /proc file is opened */
     .proc_release = module_close, /* called when it's closed */
+    .proc_lseek = noop_llseek, /* return file->f_pos */
 };
 #else
 static const struct file_operations file_ops_4_our_proc_file = {
@@ -176,6 +190,7 @@ static const struct file_operations file_ops_4_our_proc_file = {
     .write = module_input,
     .open = module_open,
     .release = module_close,
+    .llseek = noop_llseek,
 };
 #endif
 
@@ -185,7 +200,6 @@ static int __init sleep_init(void)
     our_proc_file =
         proc_create(PROC_ENTRY_FILENAME, 0644, NULL, &file_ops_4_our_proc_file);
     if (our_proc_file == NULL) {
-        remove_proc_entry(PROC_ENTRY_FILENAME, NULL);
         pr_debug("Error: Could not initialize /proc/%s\n", PROC_ENTRY_FILENAME);
         return -ENOMEM;
     }

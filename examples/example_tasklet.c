@@ -3,10 +3,10 @@
  */
 #include <linux/delay.h>
 #include <linux/interrupt.h>
-#include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/printk.h>
 
-/* Macro DECLARE_TASKLET_OLD exists for compatibiity.
+/* Macro DECLARE_TASKLET_OLD exists for compatibility.
  * See https://lwn.net/Articles/830964/
  */
 #ifndef DECLARE_TASKLET_OLD
@@ -22,7 +22,7 @@ static void tasklet_fn(unsigned long data)
 
 static DECLARE_TASKLET_OLD(mytask, tasklet_fn);
 
-static int example_tasklet_init(void)
+static int __init example_tasklet_init(void)
 {
     pr_info("tasklet example init\n");
     tasklet_schedule(&mytask);
@@ -31,7 +31,7 @@ static int example_tasklet_init(void)
     return 0;
 }
 
-static void example_tasklet_exit(void)
+static void __exit example_tasklet_exit(void)
 {
     pr_info("tasklet example exit\n");
     tasklet_kill(&mytask);
